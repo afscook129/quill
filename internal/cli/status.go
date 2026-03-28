@@ -76,9 +76,11 @@ func runStatus() error {
 	// Scan for skills on disk
 	skills, _ := discovery.Scan(".")
 
+	contextLimit := lock.ContextLimitForModel(model)
+
 	output := statusOutput{
 		Model:        model,
-		ContextLimit: 16000,
+		ContextLimit: contextLimit,
 	}
 
 	if isJSON() {

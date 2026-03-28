@@ -134,9 +134,8 @@ type caseResult struct {
 	trials           int
 	passCountWith    int
 	passCountWithout int
-	totalTokensWith  int // raw total, not averaged
-	totalTokensWithout int
-	totalLatencyWith int // raw total, not averaged
+	totalTokensWith  int
+	totalLatencyWith int
 }
 
 func runCase(p provider.Provider, model string, skillContent string, skillName string, c eval.Case, trials int) (*caseResult, error) {
@@ -176,7 +175,6 @@ func runCase(p provider.Provider, model string, skillContent string, skillName s
 		}
 
 		cr.totalTokensWith += withResp.InputTokens + withResp.OutputTokens
-		cr.totalTokensWithout += withoutResp.InputTokens + withoutResp.OutputTokens
 		cr.totalLatencyWith += withResp.LatencyMs
 	}
 

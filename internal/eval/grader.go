@@ -53,7 +53,7 @@ func GradeDeterministic(output string, expected any, assertion string) *GradeRes
 		pass = strings.TrimSpace(output) == strings.TrimSpace(exp)
 		reasoning = fmt.Sprintf("output %s expected value", boolVerb(pass, "equals", "differs from"))
 
-	case "output_matches_json_schema":
+	case "output_is_valid_json":
 		pass = json.Valid([]byte(output))
 		reasoning = fmt.Sprintf("output is %s", boolVerb(pass, "valid JSON", "not valid JSON"))
 

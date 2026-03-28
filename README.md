@@ -1,207 +1,237 @@
 # Quill
 
-**Measure whether AI agent skills actually help.**
+**Verified building blocks for AI agents.**
 
 ---
 
 ## The problem
 
-You have AI agent skills installed. You don't know if they work.
+You're building with agents. Every agent is assembled from skills — prompt
+strategies, tool-use patterns, domain expertise encoded as SKILL.md files.
+These skills are the building blocks.
 
-There are 350,000+ skills across registries (ClawHub, skills.sh, SkillsMP). They're ranked by stars and downloads. Nobody tells you: *does this skill actually improve my agent's output on my model?*
+Today, those building blocks are unverified. You write a skill, run it a few
+times, it seems to work, you ship it. Or you install one from a registry —
+350,000+ skills across ClawHub, skills.sh, SkillsMP — ranked by stars and
+downloads. No behavioral data. No one can tell you if it actually works on
+your model.
 
-You write a skill, run it a few times, it seems to work, you ship it. You have no idea if it performs at edge cases, against baseline, or across model versions. You'd never ship software without tests. You ship skills without even a definition of "working."
+**The result: every team rebuilds from scratch.** Someone has already cracked
+the most efficient way to classify support tickets, review pull requests,
+or extract action items. But you'd never know, because there's no way to
+verify that their skill works — so you write your own, vibe-check it, and
+move on.
 
-A model provider pushes an update. A skill that scored 94% now scores 71%. No error. No signal. You find out downstream, days later.
+Meanwhile, models update. A skill that scored 94% now scores 71%. No signal.
+Your agent degrades silently. You find out from a user, not from a test.
 
-**Quill measures the delta** — how much a skill improves outcomes over what the model does alone. With real numbers, per model, per eval case.
-
----
-
-## What works today
-
-### `quill bench` — the core
-
-Benchmark any skill with a SKILL.md and eval cases:
-
-```bash
-quill bench ./my-skill
-```
-
-This runs **with-skill vs without-skill** comparison:
-- **WITH**: your SKILL.md as system prompt + eval case input
-- **WITHOUT**: no system prompt + same eval case input
-- Both outputs graded against the same rubric
-- Delta = the difference
-
-```
-  ◆ benchmarking my-skill · claude-sonnet-4.6 · 3 trials · 7 cases
-    estimated cost: ~$0.55 (42 API calls)
-
-                   with skill                   without skill
-  pass rate        81%  ████████░░               42%  ████░░░░░░
-  avg tokens/call  1847
-  avg latency      2.3s
-  delta            +39pp ↑ skill is earning its context budget
-
-  failed cases (2) ────────────────────────────────
-  ✗ tc-07   "plz help cant pay"              edge: emoji/short
-  ✗ tc-12   "aide moi avec mon compte"       edge: non-english
-
-  pattern: edge-case (2 of 2 failures)
-  suggestion: add explicit handling for emoji, short, non-english
-
-  still earning its place?
-  without this skill: base model passes 42% of these tasks
-  with this skill:    base model passes 81% of these tasks
-  → yes, this skill is adding real value (+39pp)
-```
-
-**What you need:**
-1. A skill directory with `SKILL.md`
-2. Eval cases in `evals/evals.json` ([format reference](spec/EVAL_FORMAT.md))
-3. An API key: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
-
-**What it costs:** ~$0.50 for smoke eval (8 cases), ~$1.20 for full (20 cases).
-
-### Three grading methods
-
-| Method | Cost | Use for |
-|---|---|---|
-| `deterministic` | Free | Trigger tests, format validation, exact matches |
-| `llm-judge` | ~$0.001/case | Behavioral correctness (most eval cases) |
-| `human` | Free (time) | Gold standard, flagged for manual review |
-
-### Other commands that work
-
-```
-quill init          # detect harnesses, generate MCP config
-quill status        # show installed skills from lock file
-quill version       # print version
-```
+**This is the problem Quill solves.** Once a skill is verified, it stays
+verified. When it stops working, you know immediately. And skills that have
+been verified by the community become building blocks you can trust and
+build on — instead of rebuilding the same thing for the hundredth time.
 
 ---
 
-## What's being built
+## How it works
 
-| Feature | Status |
-|---|---|
-| `quill bench` — with/without delta | **Working** |
-| Eval parser + grading engine | **Working** |
-| Anthropic + OpenAI providers | **Working** |
-| Lock file + manifest formats | **Working** |
-| Harness detection (7 harnesses) | **Working** |
-| `quill search` — registry search | Needs registry |
-| `quill add` — install from registry | Needs registry |
-| MCP server (8 tools) | Next |
-| Registry backend (Convex) | Next |
-| Hook layer (drift detection) | Phase 3 |
-| Web UI (quill.dev) | Phase 5 |
+Quill verifies skills by running them against structured eval cases and
+measuring the **delta** — how much a skill improves agent outcomes over
+what the model does alone.
+
+```
+  with skill ─────────────────── without skill
+  pass rate     81%  ████████░░    42%  ████░░░░░░
+  delta         +39pp ↑ this skill is earning its place
+```
+
+Two API calls per eval case:
+- **WITH skill**: your SKILL.md as system prompt + task input
+- **WITHOUT skill**: no system prompt + same task input
+- Both graded against the same rubric. Delta = the difference.
+
+If the delta is positive, the skill is helping. If it's near zero,
+the model has absorbed what the skill was teaching — the skill is
+dead weight eating context tokens. If it's negative, the skill is
+actively hurting outcomes.
+
+**That number is what turns a guess into a building block.**
 
 ---
 
-## Install
+## The workflow
 
-```bash
-# Build from source
-git clone https://github.com/afscook129/quill
-cd quill
-make build
-./quill bench ./skills/my-skill
+### For builders assembling agents
+
+```
+I need my agent to classify support tickets
+  → Is there a skill already verified for this?
+  → Yes: ticket-classifier, +38pp on Sonnet 4.6, verified by 47 teams
+  → Install it. Move on to the next problem.
+  → Never think about ticket classification again.
 ```
 
-Distribution (brew, npm) coming in Phase 2.
+Without Quill, you'd write your own, test it manually, and maintain it
+forever — duplicating work someone else already perfected.
+
+### For builders creating skills
+
+```
+I wrote a skill for contract review
+  → quill bench ./contract-review
+  → +31pp delta, fails on non-English input
+  → Fix the edge cases, re-bench: +35pp
+  → Publish. Now anyone can use verified contract review.
+  → When the model updates, drift detection catches regressions.
+```
+
+### For agents themselves
+
+Agents work best when they can measure outcomes and iterate. Skills
+are the unit of capability. Evals are the unit of verification.
+
+An agent with access to Quill (via MCP server) can:
+- Search for verified skills that solve sub-problems
+- Benchmark a skill before installing it
+- Check if installed skills are still performing after model updates
+- Retire skills the model has outgrown
+
+**The agent becomes a better builder of itself — because it has
+verified building blocks to compose from.**
 
 ---
 
 ## Quick start
 
 ```bash
-# 1. Create a skill
-mkdir -p my-skill/evals
-cat > my-skill/SKILL.md << 'EOF'
-You are a support ticket classifier. Given a customer message,
-identify the category (billing, technical, account) and urgency
-(low, medium, high).
-EOF
-
-# 2. Create eval cases
-cat > my-skill/evals/evals.json << 'EOF'
-{
-  "version": "1.0",
-  "skill": "ticket-classifier",
-  "skill_version": "0.1.0",
-  "cases": [
-    {
-      "id": "tc-01",
-      "description": "Standard billing complaint",
-      "input": {"prompt": "My account was charged twice for order #4521"},
-      "expected": {"category": "billing", "urgency": "high"},
-      "grading": {
-        "method": "llm-judge",
-        "rubric": "Must identify as billing category with high urgency."
-      },
-      "tags": ["positive", "standard"],
-      "generated": false
-    },
-    {
-      "id": "tc-02",
-      "description": "Off-topic — should not trigger",
-      "input": {"prompt": "What's the weather like today?"},
-      "expected": {"should_trigger": false},
-      "grading": {
-        "method": "deterministic",
-        "assertion": "output_empty_or_declined"
-      },
-      "tags": ["negative", "trigger-test"],
-      "generated": false
-    }
-  ]
-}
-EOF
-
-# 3. Benchmark it
-export ANTHROPIC_API_KEY=sk-...
-quill bench ./my-skill
+git clone https://github.com/afscook129/quill
+cd quill
+make build
 ```
+
+### Try the example
+
+```bash
+export ANTHROPIC_API_KEY=sk-...   # or OPENAI_API_KEY
+./quill bench ./examples/ticket-classifier
+```
+
+This runs 7 eval cases × 3 trials against your model and shows:
+- Pass rate with and without the skill
+- Delta (how much the skill helps)
+- Which cases failed and why
+- Whether the skill is earning its context budget
+
+### Benchmark your own skill
+
+```
+my-skill/
+  SKILL.md              # the skill (becomes the system prompt)
+  evals/
+    evals.json          # eval cases (what to test, how to grade)
+```
+
+```bash
+./quill bench ./my-skill
+```
+
+See [examples/ticket-classifier](examples/ticket-classifier) for
+the eval format, or [spec/EVAL_FORMAT.md](spec/EVAL_FORMAT.md) for
+the full reference.
 
 ---
 
-## How it fits in the ecosystem
+## What Quill measures
 
-Quill doesn't replace any skill registry or harness. It adds the measurement layer that's missing.
+| Metric | What it tells you |
+|---|---|
+| **Delta** | How much the skill improves outcomes over baseline |
+| **Pass rate** | What percentage of tasks the skill handles correctly |
+| **Token cost** | How much context budget the skill consumes per session |
+| **Failure patterns** | Which types of inputs the skill struggles with |
+| **Earning its place** | Is the delta worth the token cost? |
 
-```
-Skills from:     ClawHub · skills.sh · SkillsMP · npm · manual
-Harnesses:       Claude Code · Cursor · VS Code · Windsurf · Zed · Codex · Gemini CLI
-What's missing:  Does this skill actually help? By how much? On which model?
-                 ↑ That's what Quill measures.
-```
+Three grading methods:
 
-**SkillsBench** (academic, Feb 2026) proved skills matter: +16.2pp average, varying wildly by domain. But SkillsBench was a one-time paper. Quill makes that measurement **continuous, personal, and actionable**.
+| Method | Cost | Use for |
+|---|---|---|
+| `deterministic` | Free | Trigger tests, format validation, exact matches |
+| `llm-judge` | ~$0.001/case | Behavioral correctness — most eval cases |
+| `human` | Free | Gold standard, flagged for manual review |
+
+---
+
+## Why this matters for agents
+
+Agents are only as good as their capabilities. Today, agent capabilities
+(skills) are:
+
+- **Unverified**: no behavioral data, just vibes
+- **Duplicated**: thousands of teams writing the same skills independently
+- **Fragile**: model updates break skills silently, no drift detection
+- **Opaque**: "works on my machine" with no cross-model data
+
+SkillsBench (Feb 2026) proved skills matter: curated skills raise pass
+rates by +16.2pp on average, but vary wildly (+4.5pp for software engineering,
++51.9pp for healthcare). 16 of 84 tasks showed **negative deltas** — some
+skills make things worse.
+
+That was a one-time academic study. Quill makes that measurement
+**continuous, personal, and composable**.
+
+The endgame: a library of community-verified skills with real behavioral
+data, per model, over time. When you need your agent to do something,
+you check whether someone has already verified a skill for it — and if
+they have, you use it and build on top of it. **You stop rebuilding and
+start composing.**
+
+---
+
+## What works today
+
+| Feature | Status |
+|---|---|
+| `quill bench` — with/without delta measurement | **Working** |
+| Eval parser + 3 grading methods | **Working** |
+| Anthropic + OpenAI API providers with retry | **Working** |
+| Cost estimation before runs | **Working** |
+| Lock file + manifest formats | **Working** |
+| Harness detection (7 harnesses) | **Working** |
+| Example skill with eval suite | **Working** |
+
+| Feature | Status |
+|---|---|
+| MCP server (agent-facing interface) | Next |
+| Registry (community skill library) | Next |
+| `quill search` + `quill add` (registry-backed) | Needs registry |
+| Drift detection (model update monitoring) | Phase 3 |
+| Web UI | Phase 5 |
 
 ---
 
 ## Architecture
 
-**Public repo** (this one, MIT): Go CLI, eval engine, lock/manifest formats, spec docs.
+**Public repo** (this one, MIT): Go CLI, bench runner, eval engine,
+lock/manifest formats, spec docs. This is the tool.
 
-**Private repo** (`quill-cloud`): Convex registry backend, web UI, seed run tooling.
+**Private repo** (`quill-cloud`): Convex registry backend, web UI,
+seed run tooling. This is the service.
 
-The CLI is a client of the registry API. The API spec is open (see `spec/REGISTRY_API.md`). Anyone can build a compatible backend.
+The CLI calls the registry over HTTP. The API spec is open
+([spec/REGISTRY_API.md](spec/REGISTRY_API.md)). Anyone can build
+a compatible backend.
 
 ---
 
 ## Spec documents
 
-| Document | What it covers |
+| Doc | What |
 |---|---|
-| [SPEC.md](spec/SPEC.md) | Full product specification v5.1 |
-| [SPEC_ADDENDUM.md](spec/SPEC_ADDENDUM.md) | Architecture, Phase 1 scope, build order |
-| [EVAL_FORMAT.md](spec/EVAL_FORMAT.md) | evals.json schema + grading methods |
-| [REGISTRY_API.md](spec/REGISTRY_API.md) | Complete registry API reference |
-| [MANIFEST_SPEC.md](spec/MANIFEST_SPEC.md) | quill.manifest.yaml schema |
-| [LOCK_SPEC.md](spec/LOCK_SPEC.md) | quill.lock schema |
+| [EVAL_FORMAT.md](spec/EVAL_FORMAT.md) | Eval case schema + grading methods |
+| [REGISTRY_API.md](spec/REGISTRY_API.md) | Registry API reference |
+| [SPEC.md](spec/SPEC.md) | Full product spec v5.1 |
+| [SPEC_ADDENDUM.md](spec/SPEC_ADDENDUM.md) | Architecture + build order |
+| [MANIFEST_SPEC.md](spec/MANIFEST_SPEC.md) | Manifest schema |
+| [LOCK_SPEC.md](spec/LOCK_SPEC.md) | Lock file schema |
 | [SIGNALS_SPEC.md](spec/SIGNALS_SPEC.md) | Outcome signals + privacy |
 
 ---
