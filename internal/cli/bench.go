@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/quill-dev/quill/internal/bench"
 	"github.com/quill-dev/quill/internal/registry"
@@ -24,6 +25,9 @@ shipping with confidence and shipping with hope.
 
 Measures: pass rate, delta, token cost, latency, failure patterns,
 and whether the skill is still earning its context budget.
+
+Requires an API key (ANTHROPIC_API_KEY or OPENAI_API_KEY) to call
+provider APIs. Costs ~$0.50-1.50 per bench run.
 
 Examples:
   quill bench ./my-skill
@@ -48,9 +52,65 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 		model, _ = detectModelFromLock()
 	}
 
-	// For now, use mock results to demonstrate the output format
-	result := bench.MockResult(skill, model)
-	result.Trials = trials
+	// Check if we have an evals directory — determines if we can run real bench
+	hasEvals := false
+	if _, err := os.Stat(skill); err == nil {
+		// It's a path — check for evals/evals.json
+		if _, err := os.Stat(skill + "/evals/evals.json"); err == nil {
+			hasEvals = true
+		}
+	}
+
+	// Check for API key
+	hasAPIKey := os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != ""
+
+	var result *bench.Result
+
+	if hasEvals && hasAPIKey {
+		// Run real benchmark
+		fmt.Println()
+		fmt.Printf("  %s benchmarking %s · %s · %d trials\n",
+			tui.Diamond.Render(),
+			tui.Bold.Render(skill),
+			model,
+			trials)
+		fmt.Println()
+
+		r, err := bench.Run(skill, bench.Options{
+			Model:   model,
+			Trials:  trials,
+			Publish: publish,
+		})
+		if err != nil {
+			return fmt.Errorf("bench failed: %w", err)
+		}
+		result = r
+	} else {
+		// Fall back to mock results with explanation
+		if !hasAPIKey {
+			fmt.Println()
+			fmt.Println(tui.FormatWarning("no API key found — showing demo output"))
+			fmt.Println("  set ANTHROPIC_API_KEY or OPENAI_API_KEY to run real benchmarks")
+			fmt.Println("  cost: ~$0.50-1.50 per bench run")
+		} else if !hasEvals {
+			fmt.Println()
+			fmt.Println(tui.FormatWarning("no evals/evals.json found — showing demo output"))
+			fmt.Println("  create evals/evals.json in your skill directory to run real benchmarks")
+			fmt.Println("  see: quill bench --help")
+		}
+
+		result = bench.MockResult(skill, model)
+		result.Trials = trials
+
+		fmt.Println()
+		fmt.Printf("  %s benchmarking %s · %s · %d trials %s\n",
+			tui.Diamond.Render(),
+			tui.Bold.Render(skill),
+			model,
+			trials,
+			tui.Subtle.Render("[demo]"))
+		fmt.Println()
+	}
 
 	if isJSON() {
 		data, _ := json.MarshalIndent(result, "", "  ")
@@ -58,14 +118,11 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 		return nil
 	}
 
-	fmt.Println()
-	fmt.Printf("  %s benchmarking %s · %s · %d trials\n",
-		tui.Diamond.Render(),
-		tui.Bold.Render(skill),
-		model,
-		trials)
-	fmt.Println()
+	renderBenchResult(result, triggers, skill)
+	return nil
+}
 
+func renderBenchResult(result *bench.Result, triggers bool, skill string) {
 	// Side by side comparison
 	withBar := tui.RenderProgressBar(result.PassWith, 10)
 	withoutBar := tui.RenderProgressBar(result.PassWithout, 10)
@@ -79,13 +136,19 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 		registry.FormatPercent(result.PassWith), withBar,
 		registry.FormatPercent(result.PassWithout), withoutBar)
 	fmt.Printf("  %-16s %-28d %-28d\n",
-		"avg tokens", result.AvgTokens, result.AvgTokens-1200)
-	fmt.Printf("  %-16s %-28s %-28s\n",
+		"avg tokens", result.AvgTokens, max(result.AvgTokens-500, 0))
+	fmt.Printf("  %-16s %-28s\n",
 		"avg latency",
-		fmt.Sprintf("%.1fs", float64(result.AvgLatencyMs)/1000),
-		fmt.Sprintf("%.1fs", float64(result.AvgLatencyMs-500)/1000))
-	fmt.Printf("  %-16s %s skill is earning its context budget\n",
-		"delta", tui.Success.Render(registry.FormatDeltaPP(result.Delta)+" ↑"))
+		fmt.Sprintf("%.1fs", float64(result.AvgLatencyMs)/1000))
+
+	deltaStr := registry.FormatDeltaPP(result.Delta)
+	if result.Delta > 0 {
+		fmt.Printf("  %-16s %s skill is earning its context budget\n",
+			"delta", tui.Success.Render(deltaStr+" ↑"))
+	} else {
+		fmt.Printf("  %-16s %s skill is not improving outcomes\n",
+			"delta", tui.Warning.Render(deltaStr+" ↓"))
+	}
 	fmt.Println()
 
 	// Trigger accuracy
@@ -111,7 +174,9 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 		fmt.Println()
 
 		if len(result.Patterns) > 0 {
-			fmt.Printf("  pattern: %s\n", result.Patterns[0])
+			for _, p := range result.Patterns {
+				fmt.Printf("  pattern: %s\n", p)
+			}
 		}
 		if result.Suggestion != "" {
 			fmt.Printf("  suggestion: %s\n", result.Suggestion)
@@ -137,5 +202,4 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 	}
 
 	fmt.Println()
-	return nil
 }
