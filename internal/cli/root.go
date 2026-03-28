@@ -37,6 +37,8 @@ func NewRootCmd(version string) *cobra.Command {
 		newAddCmd(),
 		newSearchCmd(),
 		newBenchCmd(),
+		newBenchHistoryCmd(),
+		newBenchCompareCmd(),
 		newFixCmd(),
 		newUpgradeCmd(),
 		newExplainCmd(),
@@ -44,7 +46,9 @@ func NewRootCmd(version string) *cobra.Command {
 		newValidateCmd(),
 		newLockCmd(),
 		newRetireCmd(),
+		newTeamCmd(),
 		newPublishCmd(),
+		newRegistryCmd(),
 		newAuditCmd(),
 		newMigrateCmd(),
 		newSBOMCmd(),
@@ -55,7 +59,21 @@ func NewRootCmd(version string) *cobra.Command {
 }
 
 func isJSON() bool {
-	return formatFlag == "json"
+	if formatFlag == "json" {
+		return true
+	}
+	if formatFlag == "text" {
+		return false
+	}
+	// Auto-detect: non-TTY defaults to JSON for piping
+	if formatFlag == "" && !isTTY() {
+		return true
+	}
+	return false
+}
+
+func forceText() {
+	formatFlag = "text"
 }
 
 func isTTY() bool {

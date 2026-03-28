@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/quill-dev/quill/internal/config"
 	"github.com/quill-dev/quill/internal/discovery"
@@ -82,6 +83,16 @@ func runStatus() error {
 
 	if isJSON() {
 		output.Skills = buildSkillStatuses(lf, skills)
+		if lf != nil {
+			for _, s := range lf.Resolved {
+				output.TotalContext += s.ContextBudgetTkns
+				if s.EvalPassRate == nil {
+					output.UnbenchedCount++
+				}
+			}
+			output.DriftCount = len(lf.System.DriftWarnings)
+			output.ContextLimit = lf.System.ContextBudgetLimit
+		}
 		data, _ := json.MarshalIndent(output, "", "  ")
 		fmt.Println(string(data))
 		return nil
@@ -123,8 +134,10 @@ func runStatus() error {
 
 			totalTokens += s.ContextBudgetTkns
 
-			fmt.Printf("  %s  %-35s %6s  %4s  %-10s  %s\n",
-				icon, name, deltaStr, passStr, source, tui.Subtle.Render(note))
+			age := formatAge(s.InstalledAt)
+
+			fmt.Printf("  %s  %-35s %6s  %4s  %-10s %s  %s\n",
+				icon, name, deltaStr, passStr, source, tui.Subtle.Render(age), tui.Subtle.Render(note))
 
 			if note == "may no longer be adding value" {
 				fmt.Printf("     %s quill retire %s\n",
@@ -213,4 +226,29 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func formatAge(installedAt string) string {
+	if installedAt == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, installedAt)
+	if err != nil {
+		return ""
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Hour:
+		return "just now"
+	case d < 24*time.Hour:
+		return "today"
+	case d < 48*time.Hour:
+		return "1d ago"
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	case d < 30*24*time.Hour:
+		return fmt.Sprintf("%dw ago", int(d.Hours()/24/7))
+	default:
+		return fmt.Sprintf("%dmo ago", int(d.Hours()/24/30))
+	}
 }

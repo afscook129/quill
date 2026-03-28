@@ -115,15 +115,9 @@ func runInit(force bool, harness string) error {
 	fmt.Println("  shared with registry. Default: yes")
 	fmt.Println(tui.Subtle.Render("  Change anytime in ~/.quill/config.yaml"))
 
-	// Summary
-	fmt.Println()
-	totalTokens := 0
-	fmt.Printf("  %s no skills installed yet · context %d / 16,000 tokens\n",
-		tui.Pending.Render(), totalTokens)
-	fmt.Println(tui.Subtle.Render("  try: quill add \"describe what you want to build\""))
-	fmt.Println()
-
-	return nil
+	// Run status as final step (always TUI, even in non-TTY)
+	forceText()
+	return runStatus()
 }
 
 type harnessInfo struct {
@@ -174,6 +168,36 @@ func detectHarnesses() []harnessInfo {
 			Name:       "Windsurf",
 			ConfigPath: ".windsurf/mcp.json",
 			ConfigType: "windsurf",
+		})
+	}
+
+	// Zed
+	home, _ := os.UserHomeDir()
+	if home != "" {
+		if _, err := os.Stat(filepath.Join(home, ".config", "zed")); err == nil {
+			found = append(found, harnessInfo{
+				Name:       "Zed",
+				ConfigPath: filepath.Join(home, ".config", "zed", "settings.json"),
+				ConfigType: "zed",
+			})
+		}
+	}
+
+	// Codex CLI
+	if _, err := os.Stat(".codex"); err == nil {
+		found = append(found, harnessInfo{
+			Name:       "Codex CLI",
+			ConfigPath: ".codex/config.yaml",
+			ConfigType: "codex",
+		})
+	}
+
+	// Gemini CLI
+	if _, err := os.Stat(".gemini"); err == nil {
+		found = append(found, harnessInfo{
+			Name:       "Gemini CLI",
+			ConfigPath: ".gemini/settings.json",
+			ConfigType: "gemini",
 		})
 	}
 
@@ -249,6 +273,21 @@ func writeHarnessConfig(h harnessInfo) error {
 				},
 			},
 		}
+	case "zed":
+		cfg = map[string]interface{}{
+			"context_servers": map[string]interface{}{
+				"quill": map[string]interface{}{
+					"command": map[string]interface{}{
+						"path": "quill",
+						"args": []string{"mcp", "--serve"},
+					},
+				},
+			},
+		}
+	case "codex":
+		// Codex uses YAML
+		yamlContent := "mcpServers:\n  quill:\n    command: quill\n    args: [mcp, --serve]\n"
+		return os.WriteFile(h.ConfigPath, []byte(yamlContent), 0o644)
 	default:
 		// MCP-only config for other harnesses
 		cfg = map[string]interface{}{

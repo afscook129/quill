@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/quill-dev/quill/internal/lock"
 	"github.com/quill-dev/quill/internal/registry"
@@ -162,6 +163,7 @@ func addToLockFile(skill *registry.SkillResult, model string) error {
 		EvalPassRateDelta: &delta,
 		EvalGenerated:     &generated,
 		ContextBudgetTkns: skill.TokenCost,
+		InstalledAt:       time.Now().UTC().Format(time.RFC3339),
 		PermissionsGranted: &lock.Permissions{
 			Filesystem: "none",
 			Network:    "none",
