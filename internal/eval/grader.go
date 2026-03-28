@@ -23,40 +23,45 @@ func GradeDeterministic(output string, expected any, assertion string) *GradeRes
 	case "output_contains":
 		substr := expectedString(expected)
 		pass = strings.Contains(output, substr)
-		reasoning = fmt.Sprintf("output %s substring %q", passVerb(pass), substr)
+		reasoning = fmt.Sprintf("output %s substring %q", boolVerb(pass, "contains", "missing"), substr)
 
 	case "output_not_contains":
 		substr := expectedString(expected)
 		pass = !strings.Contains(output, substr)
-		reasoning = fmt.Sprintf("output %s not contain %q", passVerb(pass), substr)
+		reasoning = fmt.Sprintf("output %s %q", boolVerb(pass, "excludes", "contains"), substr)
 
 	case "output_empty_or_declined":
 		trimmed := strings.TrimSpace(output)
 		pass = trimmed == "" || isDecline(trimmed)
-		reasoning = fmt.Sprintf("output is %s", describeEmpty(trimmed))
+		if pass {
+			reasoning = "output is empty or a polite decline"
+		} else {
+			reasoning = "output is substantive (expected empty or decline)"
+		}
 
 	case "output_matches_regex":
 		pattern := expectedString(expected)
 		re, err := regexp.Compile(pattern)
 		if err != nil {
-			return &GradeResult{Pass: false, Method: "deterministic", Reasoning: fmt.Sprintf("invalid regex: %s", err)}
+			return &GradeResult{Pass: false, Method: "deterministic", Reasoning: fmt.Sprintf("invalid regex %q: %s", pattern, err)}
 		}
 		pass = re.MatchString(output)
-		reasoning = fmt.Sprintf("output %s regex %q", passVerb(pass), pattern)
+		reasoning = fmt.Sprintf("output %s regex %q", boolVerb(pass, "matches", "does not match"), pattern)
 
 	case "output_equals":
-		expected := expectedString(expected)
-		pass = strings.TrimSpace(output) == strings.TrimSpace(expected)
-		reasoning = fmt.Sprintf("output %s expected", passVerb(pass))
+		exp := expectedString(expected)
+		pass = strings.TrimSpace(output) == strings.TrimSpace(exp)
+		reasoning = fmt.Sprintf("output %s expected value", boolVerb(pass, "equals", "differs from"))
 
 	case "output_matches_json_schema":
 		pass = json.Valid([]byte(output))
-		reasoning = fmt.Sprintf("output is %s JSON", passVerb(pass))
+		reasoning = fmt.Sprintf("output is %s", boolVerb(pass, "valid JSON", "not valid JSON"))
 
 	case "output_category_matches":
 		cat := expectedString(expected)
-		pass = strings.Contains(strings.ToLower(output), strings.ToLower(cat))
-		reasoning = fmt.Sprintf("output %s category %q", passVerb(pass), cat)
+		// Look for the category as a word boundary, not just substring
+		pass = containsWordCI(output, cat)
+		reasoning = fmt.Sprintf("output %s category %q", boolVerb(pass, "contains", "missing"), cat)
 
 	default:
 		return &GradeResult{Pass: false, Method: "deterministic", Reasoning: fmt.Sprintf("unknown assertion: %s", assertion)}
@@ -87,24 +92,73 @@ REASONING: <one sentence explaining why>`, skillName, input, string(expectedJSON
 }
 
 // ParseJudgeVerdict extracts PASS/FAIL from an LLM judge response.
+// Handles various formatting: "VERDICT: PASS", "verdict:pass", "**VERDICT**: PASS", etc.
 func ParseJudgeVerdict(response string) *GradeResult {
-	upper := strings.ToUpper(response)
+	// Normalize: strip markdown bold, collapse whitespace
+	cleaned := strings.ReplaceAll(response, "**", "")
+	cleaned = strings.ReplaceAll(cleaned, "__", "")
+	upper := strings.ToUpper(cleaned)
 
 	pass := false
-	if strings.Contains(upper, "VERDICT: PASS") || strings.Contains(upper, "VERDICT:PASS") {
-		pass = true
-	}
 
-	reasoning := ""
-	if idx := strings.Index(upper, "REASONING:"); idx >= 0 {
-		reasoning = strings.TrimSpace(response[idx+len("REASONING:"):])
-		// Take first line only
-		if nl := strings.Index(reasoning, "\n"); nl >= 0 {
-			reasoning = reasoning[:nl]
+	// Try structured patterns first
+	verdictPatterns := []string{
+		"VERDICT: PASS", "VERDICT:PASS", "VERDICT : PASS",
+		"RESULT: PASS", "RESULT:PASS",
+	}
+	for _, p := range verdictPatterns {
+		if strings.Contains(upper, p) {
+			pass = true
+			break
 		}
 	}
 
+	// If no PASS found, check if it explicitly says FAIL
+	// (absence of both PASS and FAIL means we can't determine — default to fail)
+	if !pass {
+		hasFail := false
+		failPatterns := []string{"VERDICT: FAIL", "VERDICT:FAIL", "VERDICT : FAIL", "RESULT: FAIL"}
+		for _, p := range failPatterns {
+			if strings.Contains(upper, p) {
+				hasFail = true
+				break
+			}
+		}
+		if !hasFail {
+			// Last resort: look for standalone PASS/FAIL
+			if strings.Contains(upper, "PASS") && !strings.Contains(upper, "FAIL") {
+				pass = true
+			}
+		}
+	}
+
+	// Extract reasoning
+	reasoning := extractReasoning(response)
+
 	return &GradeResult{Pass: pass, Method: "llm-judge", Reasoning: reasoning}
+}
+
+func extractReasoning(response string) string {
+	// Try "REASONING:" prefix (case-insensitive)
+	lower := strings.ToLower(response)
+	for _, prefix := range []string{"reasoning:", "reason:", "explanation:"} {
+		if idx := strings.Index(lower, prefix); idx >= 0 {
+			rest := strings.TrimSpace(response[idx+len(prefix):])
+			if nl := strings.Index(rest, "\n"); nl >= 0 {
+				rest = rest[:nl]
+			}
+			return strings.TrimSpace(rest)
+		}
+	}
+	// Fall back to last line if multi-line
+	lines := strings.Split(strings.TrimSpace(response), "\n")
+	if len(lines) > 1 {
+		last := strings.TrimSpace(lines[len(lines)-1])
+		if len(last) > 10 && !strings.HasPrefix(strings.ToUpper(last), "VERDICT") {
+			return last
+		}
+	}
+	return ""
 }
 
 func expectedString(expected any) string {
@@ -112,17 +166,11 @@ func expectedString(expected any) string {
 	case string:
 		return v
 	case map[string]any:
-		if s, ok := v["value"].(string); ok {
-			return s
-		}
-		if s, ok := v["substring"].(string); ok {
-			return s
-		}
-		if s, ok := v["pattern"].(string); ok {
-			return s
-		}
-		if s, ok := v["category"].(string); ok {
-			return s
+		// Try common field names
+		for _, key := range []string{"value", "substring", "pattern", "category"} {
+			if s, ok := v[key].(string); ok {
+				return s
+			}
 		}
 		b, _ := json.Marshal(v)
 		return string(b)
@@ -132,11 +180,40 @@ func expectedString(expected any) string {
 	}
 }
 
-func passVerb(pass bool) string {
-	if pass {
-		return "does"
+func boolVerb(b bool, trueV, falseV string) string {
+	if b {
+		return trueV
 	}
-	return "does not"
+	return falseV
+}
+
+// containsWordCI checks if output contains the word (case-insensitive)
+// with word-boundary-like matching (not just substring).
+func containsWordCI(output, word string) bool {
+	lo := strings.ToLower(output)
+	lw := strings.ToLower(word)
+
+	idx := 0
+	for {
+		pos := strings.Index(lo[idx:], lw)
+		if pos < 0 {
+			return false
+		}
+		pos += idx
+
+		// Check word boundaries
+		before := pos == 0 || !isAlpha(lo[pos-1])
+		after := pos+len(lw) >= len(lo) || !isAlpha(lo[pos+len(lw)])
+
+		if before && after {
+			return true
+		}
+		idx = pos + 1
+	}
+}
+
+func isAlpha(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 func isDecline(s string) bool {
@@ -152,14 +229,4 @@ func isDecline(s string) bool {
 		}
 	}
 	return false
-}
-
-func describeEmpty(s string) string {
-	if s == "" {
-		return "empty"
-	}
-	if isDecline(s) {
-		return "a polite decline"
-	}
-	return "non-empty and not a decline"
 }

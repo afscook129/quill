@@ -19,19 +19,16 @@ type Options struct {
 
 // Run executes a full benchmark: with-skill vs without-skill comparison.
 func Run(skillPath string, opts Options) (*Result, error) {
-	// Load SKILL.md content
 	skillContent, skillName, err := loadSkill(skillPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading skill: %w", err)
 	}
 
-	// Load eval suite
 	suite, err := eval.Load(skillPath)
 	if err != nil {
-		return nil, fmt.Errorf("loading evals: %w", err)
+		return nil, fmt.Errorf("loading evals from %s: %w\n\n  Create evals/evals.json in your skill directory.\n  See: quill bench --help", skillPath, err)
 	}
 
-	// Get provider
 	p, err := provider.ForModel(opts.Model)
 	if err != nil {
 		return nil, err
@@ -41,73 +38,83 @@ func Run(skillPath string, opts Options) (*Result, error) {
 		opts.Trials = 3
 	}
 
-	// Run each case
-	var caseResults []caseResult
-	totalTokensWith := 0
-	totalTokensWithout := 0
-	totalLatencyWith := 0
+	return runBenchmark(p, opts.Model, skillContent, skillName, suite, opts.Trials)
+}
+
+// runBenchmark is the core loop, separated for testability.
+func runBenchmark(p provider.Provider, model string, skillContent string, skillName string, suite *eval.Suite, trials int) (*Result, error) {
+	var cases []caseResult
 
 	for _, c := range suite.Cases {
-		cr, err := runCase(p, opts.Model, skillContent, skillName, c, opts.Trials)
-		if err != nil {
-			return nil, fmt.Errorf("running case %s: %w", c.ID, err)
+		if c.Grading.Method == "human" {
+			continue // skip human-graded cases in automated runs
 		}
-		caseResults = append(caseResults, *cr)
-		totalTokensWith += cr.avgTokensWith
-		totalTokensWithout += cr.avgTokensWithout
-		totalLatencyWith += cr.avgLatencyWith
+
+		cr, err := runCase(p, model, skillContent, skillName, c, trials)
+		if err != nil {
+			return nil, fmt.Errorf("case %s: %w", c.ID, err)
+		}
+		cases = append(cases, *cr)
 	}
 
-	// Compute pass rates
-	totalWith := 0
-	totalWithout := 0
-	totalTrials := 0
-	for _, cr := range caseResults {
-		totalWith += cr.passCountWith
-		totalWithout += cr.passCountWithout
-		totalTrials += cr.trials
+	if len(cases) == 0 {
+		return nil, fmt.Errorf("no gradeable eval cases (all cases use 'human' grading)")
 	}
 
-	passWith := float64(totalWith) / float64(totalTrials)
-	passWithout := float64(totalWithout) / float64(totalTrials)
+	return computeResult(skillName, model, trials, cases), nil
+}
+
+// computeResult aggregates case results into the final bench result.
+// Pass rates are computed per-case then averaged (each case weighted equally).
+func computeResult(skillName string, model string, trials int, cases []caseResult) *Result {
+	// Per-case pass rates, then average across cases
+	sumPassRateWith := 0.0
+	sumPassRateWithout := 0.0
+	totalTokens := 0
+	totalLatency := 0
+
+	for _, cr := range cases {
+		sumPassRateWith += float64(cr.passCountWith) / float64(cr.trials)
+		sumPassRateWithout += float64(cr.passCountWithout) / float64(cr.trials)
+		totalTokens += cr.totalTokensWith
+		totalLatency += cr.totalLatencyWith
+	}
+
+	n := len(cases)
+	passWith := sumPassRateWith / float64(n)
+	passWithout := sumPassRateWithout / float64(n)
 	delta := passWith - passWithout
+
+	// Total API calls made
+	totalCalls := n * trials
+
+	// Average tokens and latency per call (not per case)
+	avgTokens := 0
+	avgLatency := 0
+	if totalCalls > 0 {
+		avgTokens = totalTokens / totalCalls
+		avgLatency = totalLatency / totalCalls
+	}
 
 	// Collect failed cases
 	var failed []FailedCase
-	for _, cr := range caseResults {
+	for _, cr := range cases {
 		if cr.passCountWith < cr.trials {
-			edge := ""
-			for _, tag := range cr.tags {
-				if tag != "positive" && tag != "negative" && tag != "implicit" && tag != "standard" {
-					if edge != "" {
-						edge += "/"
-					}
-					edge += tag
-				}
-			}
 			failed = append(failed, FailedCase{
 				ID:    cr.id,
-				Input: cr.input,
-				Edge:  edge,
+				Input: truncate(cr.input, 60),
+				Edge:  extractEdgeTags(cr.tags),
 			})
 		}
 	}
 
-	// Cluster failure patterns
 	patterns := clusterPatterns(failed)
-
-	avgTokens := 0
-	avgLatency := 0
-	n := len(suite.Cases)
-	if n > 0 {
-		avgTokens = totalTokensWith / n
-		avgLatency = totalLatencyWith / n
-	}
 
 	return &Result{
 		SkillName:    skillName,
-		Model:        opts.Model,
-		Trials:       opts.Trials,
+		Model:        model,
+		Trials:       trials,
+		CaseCount:    n,
 		PassWith:     passWith,
 		PassWithout:  passWithout,
 		Delta:        delta,
@@ -117,7 +124,7 @@ func Run(skillPath string, opts Options) (*Result, error) {
 		Patterns:     patterns,
 		EarningPlace: delta >= 0.08,
 		Suggestion:   suggestFix(failed, patterns),
-	}, nil
+	}
 }
 
 type caseResult struct {
@@ -127,9 +134,9 @@ type caseResult struct {
 	trials           int
 	passCountWith    int
 	passCountWithout int
-	avgTokensWith    int
-	avgTokensWithout int
-	avgLatencyWith   int
+	totalTokensWith  int // raw total, not averaged
+	totalTokensWithout int
+	totalLatencyWith int // raw total, not averaged
 }
 
 func runCase(p provider.Provider, model string, skillContent string, skillName string, c eval.Case, trials int) (*caseResult, error) {
@@ -146,7 +153,7 @@ func runCase(p provider.Provider, model string, skillContent string, skillName s
 			{Role: "user", Content: c.Input.Prompt},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("with-skill call (trial %d): %w", trial+1, err)
+			return nil, fmt.Errorf("with-skill trial %d: %w", trial+1, err)
 		}
 
 		// WITHOUT skill
@@ -154,7 +161,7 @@ func runCase(p provider.Provider, model string, skillContent string, skillName s
 			{Role: "user", Content: c.Input.Prompt},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("without-skill call (trial %d): %w", trial+1, err)
+			return nil, fmt.Errorf("without-skill trial %d: %w", trial+1, err)
 		}
 
 		// Grade both
@@ -168,24 +175,21 @@ func runCase(p provider.Provider, model string, skillContent string, skillName s
 			cr.passCountWithout++
 		}
 
-		cr.avgTokensWith += withResp.InputTokens + withResp.OutputTokens
-		cr.avgTokensWithout += withoutResp.InputTokens + withoutResp.OutputTokens
-		cr.avgLatencyWith += withResp.LatencyMs
-	}
-
-	if trials > 0 {
-		cr.avgTokensWith /= trials
-		cr.avgTokensWithout /= trials
-		cr.avgLatencyWith /= trials
+		cr.totalTokensWith += withResp.InputTokens + withResp.OutputTokens
+		cr.totalTokensWithout += withoutResp.InputTokens + withoutResp.OutputTokens
+		cr.totalLatencyWith += withResp.LatencyMs
 	}
 
 	return cr, nil
 }
 
 func grade(c eval.Case, output string, skillName string, p provider.Provider, model string) *eval.GradeResult {
+	// Strip common LLM output wrapping before grading
+	cleaned := cleanOutput(output)
+
 	switch c.Grading.Method {
 	case "deterministic":
-		return eval.GradeDeterministic(output, c.Expected, c.Grading.Assertion)
+		return eval.GradeDeterministic(cleaned, c.Expected, c.Grading.Assertion)
 
 	case "llm-judge":
 		prompt := eval.LLMJudgePrompt(skillName, c.Input.Prompt, c.Expected, c.Grading.Rubric, output)
@@ -193,32 +197,41 @@ func grade(c eval.Case, output string, skillName string, p provider.Provider, mo
 		if c.Grading.Model != "" && c.Grading.Model != "default" {
 			gradeModel = c.Grading.Model
 		}
-		resp, err := p.Call(gradeModel, "", []provider.Message{
+		resp, err := p.Call(gradeModel, "You are an eval judge. Respond with exactly:\nVERDICT: PASS or FAIL\nREASONING: <one sentence>", []provider.Message{
 			{Role: "user", Content: prompt},
 		})
 		if err != nil {
-			return &eval.GradeResult{Pass: false, Method: "llm-judge", Reasoning: fmt.Sprintf("judge error: %s", err)}
+			return &eval.GradeResult{Pass: false, Method: "llm-judge", Reasoning: fmt.Sprintf("judge call failed: %s", err)}
 		}
 		return eval.ParseJudgeVerdict(resp.Content)
 
-	case "human":
-		return &eval.GradeResult{Pass: false, Method: "human", Reasoning: "pending human review"}
-
 	default:
-		return &eval.GradeResult{Pass: false, Method: c.Grading.Method, Reasoning: "unknown grading method"}
+		return &eval.GradeResult{Pass: false, Method: c.Grading.Method, Reasoning: fmt.Sprintf("unknown grading method: %s", c.Grading.Method)}
 	}
 }
 
+// cleanOutput strips common LLM wrapping (markdown code fences, etc.)
+func cleanOutput(s string) string {
+	s = strings.TrimSpace(s)
+	// Strip ```json ... ``` wrapping
+	if strings.HasPrefix(s, "```") {
+		lines := strings.Split(s, "\n")
+		if len(lines) >= 3 && strings.HasPrefix(lines[len(lines)-1], "```") {
+			s = strings.Join(lines[1:len(lines)-1], "\n")
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
 func loadSkill(skillPath string) (content string, name string, err error) {
-	// Try SKILL.md in the path
 	candidates := []string{
 		filepath.Join(skillPath, "SKILL.md"),
-		skillPath, // might be a direct path to SKILL.md
+		skillPath,
 	}
 
 	for _, path := range candidates {
-		data, err := os.ReadFile(path)
-		if err == nil {
+		data, readErr := os.ReadFile(path)
+		if readErr == nil {
 			name = filepath.Base(filepath.Dir(path))
 			if name == "." || name == "" {
 				name = filepath.Base(skillPath)
@@ -230,12 +243,31 @@ func loadSkill(skillPath string) (content string, name string, err error) {
 	return "", "", fmt.Errorf("no SKILL.md found in %s", skillPath)
 }
 
+func extractEdgeTags(tags []string) string {
+	var edges []string
+	for _, tag := range tags {
+		switch tag {
+		case "positive", "negative", "implicit", "standard":
+			continue
+		default:
+			edges = append(edges, tag)
+		}
+	}
+	return strings.Join(edges, "/")
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
+}
+
 func clusterPatterns(failed []FailedCase) []string {
 	if len(failed) == 0 {
 		return nil
 	}
 
-	// Count edge type occurrences
 	edgeCounts := map[string]int{}
 	for _, f := range failed {
 		if f.Edge != "" {
@@ -251,7 +283,6 @@ func clusterPatterns(failed []FailedCase) []string {
 			patterns = append(patterns, fmt.Sprintf("%s (%d of %d failures)", edge, count, len(failed)))
 		}
 	}
-
 	return patterns
 }
 
@@ -260,13 +291,11 @@ func suggestFix(failed []FailedCase, patterns []string) string {
 		return ""
 	}
 	if len(patterns) > 0 {
-		edges := []string{}
+		var edges []string
 		for _, f := range failed {
-			if f.Edge != "" {
-				for _, e := range strings.Split(f.Edge, "/") {
-					if !containsStr(edges, e) {
-						edges = append(edges, e)
-					}
+			for _, e := range strings.Split(f.Edge, "/") {
+				if e != "" && !containsStr(edges, e) {
+					edges = append(edges, e)
 				}
 			}
 		}

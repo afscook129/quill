@@ -10,6 +10,48 @@ import (
 	"time"
 )
 
+const maxRetries = 3
+
+// doWithRetry executes an HTTP request with exponential backoff on retryable errors (429, 529, 5xx).
+func doWithRetry(client *http.Client, newReq func() (*http.Request, error)) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
+			time.Sleep(backoff)
+		}
+
+		req, err := newReq()
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		// Retry on rate limit or server errors
+		if resp.StatusCode == 429 || resp.StatusCode == 529 || resp.StatusCode >= 500 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncateStr(string(body), 200))
+			continue
+		}
+
+		return resp, nil
+	}
+	return nil, fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func truncateStr(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
 // Message represents a chat message for any provider.
 type Message struct {
 	Role    string `json:"role"`
@@ -72,15 +114,16 @@ func (a *Anthropic) Call(model string, system string, messages []Message) (*Resp
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", a.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-
-	resp, err := a.client.Do(req)
+	resp, err := doWithRetry(a.client, func() (*http.Request, error) {
+		req, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", a.apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+		return req, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("calling Anthropic API: %w", err)
 	}
@@ -88,11 +131,11 @@ func (a *Anthropic) Call(model string, system string, messages []Message) (*Resp
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+		return nil, fmt.Errorf("reading Anthropic response: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Anthropic API error %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("Anthropic API error %d: %s", resp.StatusCode, truncateStr(string(respBody), 300))
 	}
 
 	var result struct {
@@ -162,14 +205,15 @@ func (o *OpenAI) Call(model string, system string, messages []Message) (*Respons
 		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+o.apiKey)
-
-	resp, err := o.client.Do(req)
+	resp, err := doWithRetry(o.client, func() (*http.Request, error) {
+		req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+o.apiKey)
+		return req, nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("calling OpenAI API: %w", err)
 	}
@@ -177,11 +221,11 @@ func (o *OpenAI) Call(model string, system string, messages []Message) (*Respons
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+		return nil, fmt.Errorf("reading OpenAI response: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("OpenAI API error %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("OpenAI API error %d: %s", resp.StatusCode, truncateStr(string(respBody), 300))
 	}
 
 	var result struct {

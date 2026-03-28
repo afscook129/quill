@@ -105,9 +105,36 @@ func New(version string) *Lock {
 		},
 		Resolved: []ResolvedSkill{},
 		System: System{
-			ContextBudgetLimit: 16000,
+			ContextBudgetLimit: 200000, // conservative default for modern models
 			SignalsEnabled:     true,
 			SignalsScope:       "anonymous_aggregate",
 		},
 	}
+}
+
+// ContextLimitForModel returns the context window size for known models.
+func ContextLimitForModel(model string) int {
+	switch {
+	case contains(model, "claude"):
+		return 200000
+	case contains(model, "haiku"):
+		return 200000
+	case contains(model, "gpt-5"), contains(model, "gpt-4o"):
+		return 128000
+	case contains(model, "gpt-4"):
+		return 128000
+	case contains(model, "gemini"):
+		return 1000000
+	default:
+		return 200000
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/quill-dev/quill/internal/config"
+	"github.com/quill-dev/quill/internal/lock"
 	"github.com/quill-dev/quill/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -82,4 +84,18 @@ func isTTY() bool {
 		return false
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+func detectModelFromLock() (string, string) {
+	if _, err := os.Stat(lock.FileName); err == nil {
+		lf, err := lock.Load(lock.FileName)
+		if err == nil && lf.Meta.ModelVersion != "" {
+			return lf.Meta.ModelVersion, "quill.lock"
+		}
+	}
+	model, source := config.DetectModel()
+	if model != "" {
+		return model, source
+	}
+	return "claude-sonnet-4-6", "default"
 }

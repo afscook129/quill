@@ -1,11 +1,10 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
-	"github.com/quill-dev/quill/internal/registry"
 	"github.com/quill-dev/quill/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -24,10 +23,8 @@ specifically for your model.
 
 Not ranked by stars. Not ranked by downloads. Ranked by measured outcomes.
 
-Examples:
-  quill search "extract action items from meeting transcripts"
-  quill search "classify tickets" --model gpt-5.4
-  quill search "summarize docs" --verified`,
+Requires the Quill registry (coming soon). For now, use quill bench to
+measure skills you already have.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")
@@ -43,76 +40,34 @@ Examples:
 }
 
 func runSearch(query string, model string, minScore float64, verified bool) error {
-	client := registry.NewMockClient()
-
 	if model == "" {
 		model, _ = detectModelFromLock()
 	}
 
-	resp, err := client.Search(query, model)
-	if err != nil {
-		return fmt.Errorf("search failed: %w", err)
-	}
-
-	if isJSON() {
-		data, _ := json.MarshalIndent(resp, "", "  ")
-		fmt.Println(string(data))
-		return nil
-	}
+	registryURL := registryBaseURL()
 
 	fmt.Println()
-	fmt.Printf("  %s results for %s on %s\n",
+	fmt.Printf("  %s searching for %s on %s\n",
 		tui.Diamond.Render(),
 		tui.Bold.Render("\""+query+"\""),
 		model)
 	fmt.Println()
-
-	// Table header
-	fmt.Printf("  %-3s %-30s %-10s %7s %6s %6s  %s\n",
-		"",
-		tui.Subtle.Render("skill"),
-		tui.Subtle.Render("source"),
-		tui.Subtle.Render("delta"),
-		tui.Subtle.Render("pass"),
-		tui.Subtle.Render("tokens"),
-		tui.Subtle.Render(""))
-
-	for i, r := range resp.Results {
-		verifiedStr := ""
-		if r.Verified {
-			verifiedStr = tui.Success.Render("✓")
-		}
-
-		icon := " "
-		if i == 0 {
-			icon = tui.Success.Render("★")
-		}
-
-		deltaStr := registry.FormatDeltaPP(r.Delta)
-		passStr := registry.FormatPercent(r.PassRate)
-
-		fmt.Printf("  %s  %-30s %-10s %7s %6s %5dt  %s\n",
-			icon,
-			r.Name+"@"+r.Version,
-			r.Source,
-			deltaStr,
-			passStr,
-			r.TokenCost,
-			verifiedStr,
-		)
-	}
-
-	if resp.Recommended != nil {
-		fmt.Println()
-		fmt.Printf("  %s recommended: %s\n",
-			tui.Diamond.Render(),
-			tui.Bold.Render(resp.Recommended.Name+"@"+resp.Recommended.Version))
-		fmt.Printf("    %s\n", resp.Reasoning)
-		fmt.Println()
-		fmt.Printf("  install: %s\n",
-			tui.Bold.Render("quill add "+resp.Recommended.Name))
-	}
-
+	fmt.Println(tui.FormatWarning("registry not yet connected"))
+	fmt.Println()
+	fmt.Printf("  Search requires the Quill registry at %s\n", registryURL)
+	fmt.Println("  The registry is being built. For now, use quill bench to")
+	fmt.Println("  measure skills you already have.")
+	fmt.Println()
+	fmt.Println(tui.Subtle.Render("  What works today:"))
+	fmt.Println(tui.Subtle.Render("    quill bench ./my-skill    benchmark a local skill"))
+	fmt.Println(tui.Subtle.Render("    quill status              check installed skills"))
 	fmt.Println()
 	return nil
+}
+
+func registryBaseURL() string {
+	if url := os.Getenv("QUILL_REGISTRY"); url != "" {
+		return url
+	}
+	return "https://registry.quill.dev/v1/"
 }

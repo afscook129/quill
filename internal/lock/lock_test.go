@@ -94,8 +94,8 @@ func TestNewLock(t *testing.T) {
 	if l.Meta.QuillVersion != "1.0.0" {
 		t.Errorf("expected version '1.0.0', got %q", l.Meta.QuillVersion)
 	}
-	if l.System.ContextBudgetLimit != 16000 {
-		t.Errorf("expected budget 16000, got %d", l.System.ContextBudgetLimit)
+	if l.System.ContextBudgetLimit != 200000 {
+		t.Errorf("expected budget 200000, got %d", l.System.ContextBudgetLimit)
 	}
 	if !l.System.SignalsEnabled {
 		t.Error("expected signals enabled by default")
