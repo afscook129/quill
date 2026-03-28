@@ -1,0 +1,23 @@
+# Binaries
+quill
+dist/
+
+# Test
+*.test
+coverage.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go
+vendor/
+
+# Quill local state (don't commit user config)
+.quill/
