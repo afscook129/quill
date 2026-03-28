@@ -22,10 +22,10 @@ func newRegistryCmd() *cobra.Command {
 func newRegistryInitCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "init",
-		Short: "Scaffold a private Cloudflare Workers registry — live in under 10 minutes",
-		Long: `Scaffolds the full stack for a private Quill registry:
-Cloudflare Workers + D1 + R2 + Vectorize. Including semantic search.
-Fork, deploy, done. Full setup in under 10 minutes.`,
+		Short: "Scaffold a private registry — self-hostable, full semantic search",
+		Long: `Scaffolds a private Quill registry for your org.
+The registry API spec is open — use the provided template or
+implement against any backend. Full setup in under 10 minutes.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Println()
 			fmt.Println(tui.FormatStep("scaffolding private registry..."))

@@ -207,7 +207,7 @@ Quill doesn't replace any of them. It tells you which ones are working and keeps
 
 **No forced migration.** Works on skills with no manifest at all. Quill infers what it can, flags the rest, and never blocks you.
 
-**No single registry.** Point it at any registry, including your own. `quill registry init` scaffolds a private Cloudflare Workers registry in under 10 minutes.
+**No single registry.** Point it at any registry, including your own. `quill registry init` scaffolds a private registry you can self-host.
 
 ---
 
