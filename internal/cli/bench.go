@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/quill-dev/quill/internal/bench"
 	"github.com/quill-dev/quill/internal/eval"
-	"github.com/quill-dev/quill/internal/registry"
 	"github.com/quill-dev/quill/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -76,7 +76,7 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 	}
 
 	// Check for SKILL.md
-	skillMdPath := skill + "/SKILL.md"
+	skillMdPath := filepath.Join(skill, "SKILL.md")
 	if _, err := os.Stat(skillMdPath); os.IsNotExist(err) {
 		fmt.Println()
 		fmt.Println(tui.FormatError(fmt.Sprintf("no SKILL.md found in %s", skill)))
@@ -91,7 +91,7 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 	hasAPIKey := os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != ""
 
 	// Check for evals — offer to generate if missing
-	evalsPath := skill + "/evals/evals.json"
+	evalsPath := filepath.Join(skill, "evals", "evals.json")
 	if _, err := os.Stat(evalsPath); os.IsNotExist(err) {
 		if !hasAPIKey {
 			fmt.Println()
@@ -191,15 +191,15 @@ func renderBenchResult(result *bench.Result, triggers bool, skill string) {
 		tui.Bold.Render("without skill"))
 	fmt.Printf("  %-16s %s  %-16s %s  %s\n",
 		"pass rate",
-		registry.FormatPercent(result.PassWith), withBar,
-		registry.FormatPercent(result.PassWithout), withoutBar)
+		tui.FormatPercent(result.PassWith), withBar,
+		tui.FormatPercent(result.PassWithout), withoutBar)
 	fmt.Printf("  %-16s %-28d\n",
 		"avg tokens/call", result.AvgTokens)
 	fmt.Printf("  %-16s %-28s\n",
 		"avg latency",
 		fmt.Sprintf("%.1fs", float64(result.AvgLatencyMs)/1000))
 
-	deltaStr := registry.FormatDeltaPP(result.Delta)
+	deltaStr := tui.FormatDeltaPP(result.Delta)
 	if result.Delta > 0 {
 		fmt.Printf("  %-16s %s skill is earning its context budget\n",
 			"delta", tui.Success.Render(deltaStr+" ↑"))
@@ -217,7 +217,7 @@ func renderBenchResult(result *bench.Result, triggers bool, skill string) {
 		ta := result.TriggerAccuracy
 		fmt.Printf("  trigger accuracy  %d/%d (%s)   · %d false positive · %d miss\n",
 			ta.Correct, ta.Total,
-			registry.FormatPercent(float64(ta.Correct)/float64(ta.Total)),
+			tui.FormatPercent(float64(ta.Correct)/float64(ta.Total)),
 			ta.FalsePositives, ta.FalseNegatives)
 		fmt.Println()
 	}
@@ -246,14 +246,14 @@ func renderBenchResult(result *bench.Result, triggers bool, skill string) {
 	// Earning its place
 	fmt.Println("  still earning its place?")
 	fmt.Printf("  without this skill: base model passes %s of these tasks\n",
-		registry.FormatPercent(result.PassWithout))
+		tui.FormatPercent(result.PassWithout))
 	fmt.Printf("  with this skill:    base model passes %s of these tasks\n",
-		registry.FormatPercent(result.PassWith))
+		tui.FormatPercent(result.PassWith))
 
 	if result.EarningPlace {
 		fmt.Printf("  %s yes, this skill is adding real value (%s)\n",
 			tui.Arrow.Render(),
-			tui.Success.Render(registry.FormatDeltaPP(result.Delta)))
+			tui.Success.Render(tui.FormatDeltaPP(result.Delta)))
 	} else if result.Delta < -0.02 {
 		fmt.Printf("  %s this skill is making outcomes worse — consider removing it\n",
 			tui.Arrow.Render())

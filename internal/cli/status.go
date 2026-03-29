@@ -10,7 +10,6 @@ import (
 	"github.com/quill-dev/quill/internal/discovery"
 	"github.com/quill-dev/quill/internal/lock"
 	"github.com/quill-dev/quill/internal/manifest"
-	"github.com/quill-dev/quill/internal/registry"
 	"github.com/quill-dev/quill/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -119,10 +118,10 @@ func runStatus() error {
 			note := ""
 
 			if s.EvalPassRateDelta != nil && *s.EvalPassRateDelta > 0 {
-				deltaStr = registry.FormatDeltaPP(*s.EvalPassRateDelta)
+				deltaStr = tui.FormatDeltaPP(*s.EvalPassRateDelta)
 			}
 			if s.EvalPassRate != nil {
-				passStr = registry.FormatPercent(*s.EvalPassRate)
+				passStr = tui.FormatPercent(*s.EvalPassRate)
 			}
 
 			if s.EvalPassRate == nil {
@@ -208,10 +207,10 @@ func buildSkillStatuses(lf *lock.Lock, skills []discovery.SkillInfo) []skillStat
 				Status: "ok",
 			}
 			if s.EvalPassRate != nil {
-				ss.PassRate = registry.FormatPercent(*s.EvalPassRate)
+				ss.PassRate = tui.FormatPercent(*s.EvalPassRate)
 			}
 			if s.EvalPassRateDelta != nil {
-				ss.Delta = registry.FormatDeltaPP(*s.EvalPassRateDelta)
+				ss.Delta = tui.FormatDeltaPP(*s.EvalPassRateDelta)
 			}
 			if s.EvalPassRate == nil {
 				ss.Status = "unbenchmarked"

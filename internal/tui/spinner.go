@@ -29,3 +29,17 @@ func FormatWarning(msg string) string {
 func FormatError(msg string) string {
 	return fmt.Sprintf("%s %s", ErrMark.Render(), msg)
 }
+
+// FormatDeltaPP formats a delta as percentage points (e.g., +38pp).
+func FormatDeltaPP(d float64) string {
+	pp := int(d * 100)
+	if pp > 0 {
+		return fmt.Sprintf("+%dpp", pp)
+	}
+	return fmt.Sprintf("%dpp", pp)
+}
+
+// FormatPercent formats a float as a percentage (e.g., 94%).
+func FormatPercent(f float64) string {
+	return fmt.Sprintf("%d%%", int(f*100))
+}

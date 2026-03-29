@@ -2,9 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
+	"github.com/quill-dev/quill/internal/registry"
 	"github.com/quill-dev/quill/internal/tui"
 	"github.com/spf13/cobra"
 )
@@ -44,7 +44,7 @@ func runSearch(query string, model string, minScore float64, verified bool) erro
 		model, _ = detectModelFromLock()
 	}
 
-	registryURL := registryBaseURL()
+	registryURL := registry.BaseURL()
 
 	fmt.Println()
 	fmt.Printf("  %s searching for %s on %s\n",
@@ -63,11 +63,4 @@ func runSearch(query string, model string, minScore float64, verified bool) erro
 	fmt.Println(tui.Subtle.Render("    quill status              check installed skills"))
 	fmt.Println()
 	return nil
-}
-
-func registryBaseURL() string {
-	if url := os.Getenv("QUILL_REGISTRY"); url != "" {
-		return url
-	}
-	return "https://registry.quill.dev/v1/"
 }
