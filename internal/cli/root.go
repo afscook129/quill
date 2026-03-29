@@ -33,6 +33,8 @@ func NewRootCmd(version string) *cobra.Command {
 	root.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Minimal output")
 	root.PersistentFlags().BoolVar(&verboseFlag, "verbose", false, "Detailed output")
 
+	SetMCPVersion(version)
+
 	root.AddCommand(
 		newInitCmd(),
 		newStatusCmd(),
@@ -41,6 +43,7 @@ func NewRootCmd(version string) *cobra.Command {
 		newBenchCmd(),
 		newBenchHistoryCmd(),
 		newBenchCompareCmd(),
+		newMCPCmd(),
 		newFixCmd(),
 		newUpgradeCmd(),
 		newExplainCmd(),
