@@ -42,7 +42,9 @@ func toolSearch() Tool {
 				Query string `json:"query"`
 				Model string `json:"model"`
 			}
-			json.Unmarshal(params, &input)
+			if err := json.Unmarshal(params, &input); err != nil {
+				return nil, fmt.Errorf("invalid parameters: %w", err)
+			}
 
 			return map[string]any{
 				"status":  "registry_not_available",
@@ -70,7 +72,9 @@ func toolAdd() Tool {
 			var input struct {
 				Skill string `json:"skill"`
 			}
-			json.Unmarshal(params, &input)
+			if err := json.Unmarshal(params, &input); err != nil {
+				return nil, fmt.Errorf("invalid parameters: %w", err)
+			}
 
 			return map[string]any{
 				"installed": false,
@@ -177,7 +181,9 @@ func toolBench() Tool {
 				Model  string `json:"model"`
 				Trials int    `json:"trials"`
 			}
-			json.Unmarshal(params, &input)
+			if err := json.Unmarshal(params, &input); err != nil {
+				return nil, fmt.Errorf("invalid parameters: %w", err)
+			}
 
 			if input.Model == "" {
 				input.Model, _ = config.DetectModel()
@@ -303,7 +309,9 @@ func toolRetire() Tool {
 			var input struct {
 				Skill string `json:"skill"`
 			}
-			json.Unmarshal(params, &input)
+			if err := json.Unmarshal(params, &input); err != nil {
+				return nil, fmt.Errorf("invalid parameters: %w", err)
+			}
 
 			return map[string]any{
 				"status":  "not_available",
