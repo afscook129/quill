@@ -46,7 +46,7 @@ type Variant struct {
 	Prompt       string   `yaml:"prompt"`
 	TestedModels []string `yaml:"tested_models,omitempty"`
 	PassRate     float64  `yaml:"pass_rate,omitempty"`
-	PassRateDlt  float64  `yaml:"pass_rate_delta,omitempty"`
+	PassRateDelta  float64  `yaml:"pass_rate_delta,omitempty"`
 }
 
 type Permissions struct {

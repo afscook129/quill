@@ -8,7 +8,7 @@ Eval suites are defined in `evals.json` files. Each skill may ship with an eval 
 
 ```json
 {
-  "schema_version": "1.0",
+  "version": "1.0",
   "skill": "ticket-classifier",
   "skill_version": "2.1.0",
   "description": "Eval suite for ticket classification skill",
@@ -25,7 +25,7 @@ Eval suites are defined in `evals.json` files. Each skill may ship with an eval 
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `schema_version` | string | Yes | Always `"1.0"` for this format version |
+| `version` | string | Yes | Always `"1.0"` for this format version |
 | `skill` | string | Yes | Skill name this eval suite targets |
 | `skill_version` | string | No | Skill version this suite was written for. Omit for version-agnostic suites. |
 | `description` | string | No | Human-readable description of the eval suite |
@@ -222,7 +222,7 @@ Generated cases are marked with `"generated": true` in the case object. They car
 
 ```json
 {
-  "schema_version": "1.0",
+  "version": "1.0",
   "skill": "ticket-classifier",
   "skill_version": "2.1.0",
   "description": "Eval suite for the ticket-classifier skill. Tests classification accuracy across categories, priorities, and edge cases.",

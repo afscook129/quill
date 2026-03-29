@@ -115,7 +115,7 @@ variants:
 	if claude.PassRate != 0.91 {
 		t.Errorf("expected pass rate 0.91, got %f", claude.PassRate)
 	}
-	if claude.PassRateDlt != 0.38 {
-		t.Errorf("expected delta 0.38, got %f", claude.PassRateDlt)
+	if claude.PassRateDelta != 0.38 {
+		t.Errorf("expected delta 0.38, got %f", claude.PassRateDelta)
 	}
 }
