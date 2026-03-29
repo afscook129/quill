@@ -72,6 +72,25 @@ func runInit(force bool, harness string) error {
 		}
 	}
 
+	// Generate .mcp.json (MCP server config — works with any harness)
+	if _, err := os.Stat(".mcp.json"); os.IsNotExist(err) {
+		fmt.Printf("  %s generating .mcp.json... ", tui.Diamond.Render())
+		mcpConfig := []byte(`{
+  "mcpServers": {
+    "quill": {
+      "command": "quill",
+      "args": ["mcp", "--serve"]
+    }
+  }
+}
+`)
+		if err := os.WriteFile(".mcp.json", mcpConfig, 0o644); err != nil {
+			fmt.Println(tui.Error.Render("failed"))
+		} else {
+			fmt.Println(tui.Success.Render("done"))
+		}
+	}
+
 	// Generate manifest
 	fmt.Printf("  %s generating quill.manifest.yaml... ", tui.Diamond.Render())
 	m := manifest.Default(projectName)

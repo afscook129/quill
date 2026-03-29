@@ -87,24 +87,48 @@ func runBench(skill string, trials int, model string, triggers bool, publish boo
 		return fmt.Errorf("no SKILL.md in %s", skill)
 	}
 
-	// Check for evals
+	// Check for API key (needed for evals and bench)
+	hasAPIKey := os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != ""
+
+	// Check for evals — offer to generate if missing
 	evalsPath := skill + "/evals/evals.json"
 	if _, err := os.Stat(evalsPath); os.IsNotExist(err) {
-		fmt.Println()
-		fmt.Println(tui.FormatError(fmt.Sprintf("no evals/evals.json found in %s", skill)))
-		fmt.Println()
-		fmt.Println("  Benchmarking requires eval cases that define:")
-		fmt.Println("    - Input: what to send to the model")
-		fmt.Println("    - Expected: what a correct response looks like")
-		fmt.Println("    - Grading: how to determine pass/fail")
-		fmt.Println()
-		fmt.Println("  Create evals/evals.json. See spec/EVAL_FORMAT.md for the format.")
-		fmt.Println()
-		return fmt.Errorf("no evals/evals.json in %s", skill)
-	}
+		if !hasAPIKey {
+			fmt.Println()
+			fmt.Println(tui.FormatError(fmt.Sprintf("no evals/evals.json found in %s", skill)))
+			fmt.Println()
+			fmt.Println("  Set ANTHROPIC_API_KEY or OPENAI_API_KEY to generate starter evals,")
+			fmt.Println("  or create evals/evals.json manually (see spec/EVAL_FORMAT.md).")
+			fmt.Println()
+			return fmt.Errorf("no evals and no API key")
+		}
 
-	// Check for API key
-	hasAPIKey := os.Getenv("ANTHROPIC_API_KEY") != "" || os.Getenv("OPENAI_API_KEY") != ""
+		// Generate starter evals from SKILL.md
+		fmt.Println()
+		fmt.Println(tui.FormatStep("no evals found — generating 5 starter cases from SKILL.md..."))
+
+		skillContent, err := os.ReadFile(skillMdPath)
+		if err != nil {
+			return fmt.Errorf("reading SKILL.md: %w", err)
+		}
+
+		suite, err := eval.GenerateStarter(string(skillContent), skill, model)
+		if err != nil {
+			fmt.Println()
+			fmt.Println(tui.FormatError("failed to generate starter evals"))
+			fmt.Printf("  %s\n", err)
+			fmt.Println()
+			fmt.Println("  Create evals/evals.json manually. See spec/EVAL_FORMAT.md")
+			fmt.Println()
+			return err
+		}
+
+		fmt.Printf("    generated %d cases [generated] — saved to %s/evals/evals.json\n", len(suite.Cases), skill)
+		fmt.Println()
+		fmt.Println(tui.FormatWarning("generated evals are flagged [generated] in all output"))
+		fmt.Println("  Review and edit them for better coverage. Human-written evals catch more real failures.")
+		fmt.Println()
+	}
 	if !hasAPIKey {
 		fmt.Println()
 		fmt.Println(tui.FormatError("no API key found"))
